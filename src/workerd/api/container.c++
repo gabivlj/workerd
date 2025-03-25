@@ -135,18 +135,23 @@ class Container::TcpPortWorkerInterface final: public WorkerInterface {
 
     // Make a TCP connection...
     auto pipe = kj::newTwoWayPipe();
-    auto connectionPromise =
-        connectImpl(*pipe.ends[1]).then([]() -> kj::Promise<void> { return kj::NEVER_DONE; });
+
+    auto connectionPromise = connectImpl(*pipe.ends[0]).then([]() -> kj::Promise<void> { return kj::NEVER_DONE; });
 
     // ... and then stack an HttpClient on it ...
-    auto client = kj::newHttpClient(headerTable, *pipe.ends[0], {.entropySource = entropySource});
+    auto client = kj::newHttpClient(headerTable, *pipe.ends[1], {.entropySource = entropySource});
 
     // ... and then adapt that to an HttpService ...
     auto service = kj::newHttpService(*client);
 
+
+    auto pipeReqBody = kj::newOneWayPipe();
     // ... and now we can just forward our call to that.
-    co_await connectionPromise.exclusiveJoin(
-        service->request(method, noHostUrl, newHeaders, requestBody, response));
+    auto promisePump = requestBody.pumpTo(*pipeReqBody.out).ignoreResult();
+    IoContext::current().addTask(kj::mv(promisePump));
+    co_await connectionPromise.exclusiveJoin(service->request(method, noHostUrl, newHeaders, *pipeReqBody.in, response));
+    KJ_LOG(ERROR, "exclusive join");
+    KJ_LOG(ERROR, "promise pump");
   }
 
   // Implements connect(), i.e., forms a raw socket.
@@ -193,27 +198,33 @@ class Container::TcpPortWorkerInterface final: public WorkerInterface {
   // Connect to the port and pump bytes to/from `connection`. Used by both request() and
   // connect().
   kj::Promise<void> connectImpl(kj::AsyncIoStream& connection) {
+
     // A lot of the following is copied from
     // capnp::HttpOverCapnpFactory::KjToCapnpHttpServiceAdapter::connect().
     auto req = port.connectRequest(capnp::MessageSize{4, 1});
     auto downPipe = kj::newOneWayPipe();
     req.setDown(byteStreamFactory.kjToCapnp(kj::mv(downPipe.out)));
     auto pipeline = req.send();
-
     // Make sure the request message isn't pinned into memory through the co_await below.
     { auto drop = kj::mv(req); }
+
+
 
     auto downPumpTask =
         downPipe.in->pumpTo(connection)
             .then([&connection, down = kj::mv(downPipe.in)](uint64_t) -> kj::Promise<void> {
+      KJ_LOG(ERROR, "KJ: calling shutdown write");
       connection.shutdownWrite();
       return kj::NEVER_DONE;
     });
-    auto up = pipeline.getUp();
 
-    auto upStream = byteStreamFactory.capnpToKjExplicitEnd(up);
+
+    auto up = pipeline.getUp();
+        auto upStream = byteStreamFactory.capnpToKjExplicitEnd(up);
     auto upPumpTask = connection.pumpTo(*upStream)
                           .then([&upStream = *upStream](uint64_t) mutable {
+
+      KJ_LOG(ERROR, "KJ: calling shutdown read");
       return upStream.end();
     }).then([up = kj::mv(up), upStream = kj::mv(upStream)]() mutable -> kj::Promise<void> {
       return kj::NEVER_DONE;
