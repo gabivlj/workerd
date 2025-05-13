@@ -40,11 +40,14 @@ class ColoLocalActorNamespace: public jsg::Object {
 };
 
 class DurableObjectNamespace;
+class DurableObject;
 
 // DurableObjectId type seen by JavaScript.
 class DurableObjectId: public jsg::Object {
  public:
-  DurableObjectId(kj::Own<ActorIdFactory::ActorId> id): id(kj::mv(id)) {}
+  DurableObjectId(
+    kj::Own<ActorIdFactory::ActorId> id
+  ) : id(kj::mv(id)) {}
 
   const ActorIdFactory::ActorId& getInner() {
     return *id;
@@ -79,6 +82,7 @@ class DurableObjectId: public jsg::Object {
   kj::Own<ActorIdFactory::ActorId> id;
 
   friend class DurableObjectNamespace;
+  friend class DurableObjectIdGetter;
 };
 
 // Stub object used to send messages to a remote durable object.
@@ -153,6 +157,8 @@ class ReplicaActorOutgoingFactory final: public Fetcher::OutgoingFactory {
   kj::String actorId;
 };
 
+class DurableObjectIdGetter;
+
 // Global durable object class binding type.
 class DurableObjectNamespace: public jsg::Object {
 
@@ -174,31 +180,32 @@ class DurableObjectNamespace: public jsg::Object {
     });
   };
 
+
+struct GetDurableObjectOptions {
+  jsg::Optional<kj::String> locationHint;
+
+  JSG_STRUCT(locationHint);
+
+  JSG_STRUCT_TS_DEFINE(type DurableObjectLocationHint = "wnam" | "enam" | "sam" | "weur" | "eeur" | "apac" | "oc" | "afr" | "me");
+  // Possible values from https://developers.cloudflare.com/workers/runtime-apis/durable-objects/#providing-a-location-hint
+  JSG_STRUCT_TS_OVERRIDE({
+    locationHint?: DurableObjectLocationHint;
+  });
+};
+
   // Create a new unique ID for a durable object that will be allocated nearby the calling colo.
-  jsg::Ref<DurableObjectId> newUniqueId(jsg::Lock& js, jsg::Optional<NewUniqueIdOptions> options);
+  jsg::Ref<DurableObjectIdGetter> newUniqueId(jsg::Lock& js, jsg::Optional<NewUniqueIdOptions> options);
 
   // Create a name-derived ID. Passing in the same `name` (to the same class) will always
   // produce the same ID.
-  jsg::Ref<DurableObjectId> idFromName(jsg::Lock& js, kj::String name);
+  jsg::Ref<DurableObjectIdGetter> idFromName(jsg::Lock& js, kj::String name);
 
   // Create a DurableObjectId from the stringified form of the ID (as produced by calling
   // `toString()` on a durable object ID). Throws if the ID is not a 64-digit hex number, or if the
   // ID was not originally created for this class.
   //
   // The ID may be one that was originally created using either `newUniqueId()` or `idFromName()`.
-  jsg::Ref<DurableObjectId> idFromString(jsg::Lock& js, kj::String id);
-
-  struct GetDurableObjectOptions {
-    jsg::Optional<kj::String> locationHint;
-
-    JSG_STRUCT(locationHint);
-
-    JSG_STRUCT_TS_DEFINE(type DurableObjectLocationHint = "wnam" | "enam" | "sam" | "weur" | "eeur" | "apac" | "oc" | "afr" | "me");
-    // Possible values from https://developers.cloudflare.com/workers/runtime-apis/durable-objects/#providing-a-location-hint
-    JSG_STRUCT_TS_OVERRIDE({
-      locationHint?: DurableObjectLocationHint;
-    });
-  };
+  jsg::Ref<DurableObjectIdGetter> idFromString(jsg::Lock& js, kj::String id);
 
   // Gets a durable object by ID or creates it if it doesn't already exist.
   jsg::Ref<DurableObject> get(
@@ -245,11 +252,32 @@ class DurableObjectNamespace: public jsg::Object {
       ActorGetMode mode,
       jsg::Ref<DurableObjectId> id,
       jsg::Optional<GetDurableObjectOptions> options);
+
+  friend class DurableObjectIdGetter;
+};
+
+class DurableObjectIdGetter final: public DurableObjectId {
+  public:
+    DurableObjectIdGetter(
+        kj::Own<ActorIdFactory::ActorId> id,
+        kj::Own<DurableObjectNamespace> durableObjectNamespace
+    ) : DurableObjectId(kj::mv(id)), durableObjectNamespace(kj::mv(durableObjectNamespace)) {}
+
+
+    jsg::Ref<DurableObject> get(jsg::Lock& js, jsg::Optional<DurableObjectNamespace::GetDurableObjectOptions> options);
+
+    JSG_RESOURCE_TYPE(DurableObjectIdGetter) {
+        JSG_INHERIT(DurableObjectId);
+        JSG_METHOD(get);
+    }
+
+  private:
+    kj::Own<DurableObjectNamespace> durableObjectNamespace;
 };
 
 #define EW_ACTOR_ISOLATE_TYPES                                                                     \
   api::ColoLocalActorNamespace, api::DurableObject, api::DurableObjectId,                          \
       api::DurableObjectNamespace, api::DurableObjectNamespace::NewUniqueIdOptions,                \
-      api::DurableObjectNamespace::GetDurableObjectOptions
+      api::DurableObjectNamespace::GetDurableObjectOptions, api::DurableObjectIdGetter
 
 }  // namespace workerd::api
