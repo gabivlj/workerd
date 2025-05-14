@@ -134,14 +134,17 @@ kj::String DurableObjectId::toString() {
   return id->toString();
 }
 
-jsg::Ref<DurableObject> DurableObjectIdGetter::get(jsg::Lock& js, jsg::Optional<DurableObjectNamespace::GetDurableObjectOptions> options) {
+jsg::Ref<DurableObject> DurableObjectIdGetter::get(
+    jsg::Lock& js, jsg::Optional<DurableObjectNamespace::GetDurableObjectOptions> options) {
   auto mode = ActorGetMode::GET_OR_CREATE;
-  return durableObjectNamespace->getImpl(js, mode, js.alloc<DurableObjectId>(id->clone()), kj::mv(options));
+  return durableObjectNamespace->getImpl(
+      js, mode, js.alloc<DurableObjectId>(id->clone()), kj::mv(options));
 }
 
 jsg::Ref<DurableObjectIdGetter> DurableObjectNamespace::newUniqueId(
     jsg::Lock& js, jsg::Optional<NewUniqueIdOptions> options) {
-  return js.alloc<DurableObjectIdGetter>(idFactory->newUniqueId(options.orDefault({}).jurisdiction), kj::addRef(*this));
+  return js.alloc<DurableObjectIdGetter>(
+      idFactory->newUniqueId(options.orDefault({}).jurisdiction), kj::addRef(*this));
 }
 
 jsg::Ref<DurableObjectIdGetter> DurableObjectNamespace::idFromName(jsg::Lock& js, kj::String name) {
