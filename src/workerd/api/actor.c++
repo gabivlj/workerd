@@ -136,7 +136,7 @@ kj::String DurableObjectId::toString() {
 
 jsg::Ref<DurableObject> DurableObjectIdGetter::get(jsg::Lock& js, jsg::Optional<DurableObjectNamespace::GetDurableObjectOptions> options) {
   auto mode = ActorGetMode::GET_OR_CREATE;
-  return durableObjectNamespace->getImpl(js, mode, js.alloc<DurableObjectId>(kj::mv(id)), kj::mv(options));
+  return durableObjectNamespace->getImpl(js, mode, js.alloc<DurableObjectId>(id->clone()), kj::mv(options));
 }
 
 jsg::Ref<DurableObjectIdGetter> DurableObjectNamespace::newUniqueId(
