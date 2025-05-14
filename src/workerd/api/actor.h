@@ -180,19 +180,6 @@ class DurableObjectNamespace: public jsg::Object {
     });
   };
 
-
-struct GetDurableObjectOptions {
-  jsg::Optional<kj::String> locationHint;
-
-  JSG_STRUCT(locationHint);
-
-  JSG_STRUCT_TS_DEFINE(type DurableObjectLocationHint = "wnam" | "enam" | "sam" | "weur" | "eeur" | "apac" | "oc" | "afr" | "me");
-  // Possible values from https://developers.cloudflare.com/workers/runtime-apis/durable-objects/#providing-a-location-hint
-  JSG_STRUCT_TS_OVERRIDE({
-    locationHint?: DurableObjectLocationHint;
-  });
-};
-
   // Create a new unique ID for a durable object that will be allocated nearby the calling colo.
   jsg::Ref<DurableObjectIdGetter> newUniqueId(jsg::Lock& js, jsg::Optional<NewUniqueIdOptions> options);
 
@@ -206,6 +193,18 @@ struct GetDurableObjectOptions {
   //
   // The ID may be one that was originally created using either `newUniqueId()` or `idFromName()`.
   jsg::Ref<DurableObjectIdGetter> idFromString(jsg::Lock& js, kj::String id);
+
+  struct GetDurableObjectOptions {
+  jsg::Optional<kj::String> locationHint;
+
+  JSG_STRUCT(locationHint);
+
+  JSG_STRUCT_TS_DEFINE(type DurableObjectLocationHint = "wnam" | "enam" | "sam" | "weur" | "eeur" | "apac" | "oc" | "afr" | "me");
+  // Possible values from https://developers.cloudflare.com/workers/runtime-apis/durable-objects/#providing-a-location-hint
+  JSG_STRUCT_TS_OVERRIDE({
+    locationHint?: DurableObjectLocationHint;
+  });
+  };
 
   // Gets a durable object by ID or creates it if it doesn't already exist.
   jsg::Ref<DurableObject> get(
