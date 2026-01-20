@@ -1,4 +1,4 @@
-import { DurableObject } from 'cloudflare:workers';
+import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers';
 import assert from 'node:assert';
 import { scheduler } from 'node:timers/promises';
 
@@ -260,6 +260,39 @@ export class DurableObjectExample extends DurableObject {
   getStatus() {
     return this.ctx.container.running;
   }
+
+  async testSetEgressTcp() {
+    const container = this.ctx.container;
+    if (container.running) {
+      let monitor = container.monitor().catch((_err) => {});
+      await container.destroy();
+      await monitor;
+    }
+    assert.strictEqual(container.running, false);
+
+    // Start container
+    container.start();
+    assert.strictEqual(container.running, true);
+
+    // Wait for container to be running
+    await scheduler.wait(500);
+
+    // Set up egress TCP mapping to route requests to the binding
+    // This registers the binding's channel token with the container runtime
+    container.setEgressTcp(
+      '10.0.0.1:9999',
+      this.ctx.exports.TestService({ props: {} })
+    );
+
+    // Clean up
+    await container.destroy();
+  }
+}
+
+export class TestService extends WorkerEntrypoint {
+  fetch(req) {
+    return new Response('you have hit TestService');
+  }
 }
 
 export class DurableObjectExample2 extends DurableObjectExample {}
@@ -392,5 +425,14 @@ export const testSetInactivityTimeout = {
       // Container should still be running after DO exited
       await stub.expectRunning(true);
     }
+  },
+};
+
+// Test setEgressTcp functionality - registers a binding's channel token with the container
+export const testSetEgressTcp = {
+  async test(_ctrl, env) {
+    const id = env.MY_CONTAINER.idFromName('testSetEgressTcp');
+    const stub = env.MY_CONTAINER.get(id);
+    await stub.testSetEgressTcp();
   },
 };
