@@ -238,17 +238,15 @@ class ContainerClient::EgressHttpService final: public kj::HttpService {
       auto destConn = co_await addr->connect();
 
       // Pump bytes bidirectionally: tunnel <-> destination
-      auto promises = kj::heapArrayBuilder<kj::Promise<void>>(2);
+      auto connToDestination = connection.pumpTo(*destConn).then(
+          [&destConn = *destConn](uint64_t) { destConn.shutdownWrite(); });
 
-      promises.add(connection.pumpTo(*destConn).then(
-          [&destConn = *destConn](uint64_t) { destConn.shutdownWrite(); }));
-
-      promises.add(destConn->pumpTo(connection).then([&connection](uint64_t) {
+      auto destinationToConn = destConn->pumpTo(connection).then([&connection](uint64_t) {
         connection.shutdownWrite();
-      }));
+      });
 
-      // Wait for both directions to complete, keeping destConn alive
-      co_await kj::joinPromisesFailFast(promises.finish()).attach(kj::mv(destConn));
+      // Wait for both directions to complete
+      co_await kj::joinPromisesFailFast(kj::arr(kj::mv(connToDestination), kj::mv(destinationToConn)));
       co_return;
     }
 
@@ -409,18 +407,15 @@ kj::Promise<kj::String> ContainerClient::getDockerBridgeGateway() {
 }
 
 kj::Promise<uint16_t> ContainerClient::startEgressListener(kj::StringPtr listenAddress) {
-  // Create header table for HTTP parsing
-  auto headerTable = kj::heap<kj::HttpHeaderTable>();
-  auto& headerTableRef = *headerTable;
-  egressHeaderTable = kj::mv(headerTable);
-
   // Create the egress HTTP service
-  auto service = kj::heap<EgressHttpService>(*this, headerTableRef);
+  auto service = kj::heap<EgressHttpService>(*this, headerTable);
 
   // Create the HTTP server
-  auto httpServer = kj::heap<kj::HttpServer>(timer, headerTableRef, *service);
+  auto httpServer = kj::heap<kj::HttpServer>(timer, headerTable, *service);
   auto& httpServerRef = *httpServer;
-  egressHttpServer = kj::mv(httpServer);
+
+  // Attach service to httpServer so ownership is clear - httpServer owns service
+  egressHttpServer = httpServer.attach(kj::mv(service));
 
   // Listen on the Docker bridge gateway IP with port 0 to let the OS pick a free port
   auto addr = co_await network.parseAddress(kj::str(listenAddress, ":0"));
@@ -430,10 +425,9 @@ kj::Promise<uint16_t> ContainerClient::startEgressListener(kj::StringPtr listenA
   uint16_t chosenPort = listener->getPort();
 
   // Run the server in the background - this promise never completes normally
-  // We need to detach it and return the port
   egressListenerTask =
       httpServerRef.listenHttp(*listener)
-          .attach(kj::mv(listener), kj::mv(service))
+          .attach(kj::mv(listener))
           .eagerlyEvaluate([](kj::Exception&& e) { LOG_EXCEPTION("Error in egress listener", e); });
 
   co_return chosenPort;
@@ -442,7 +436,6 @@ kj::Promise<uint16_t> ContainerClient::startEgressListener(kj::StringPtr listenA
 void ContainerClient::stopEgressListener() {
   egressListenerTask = kj::none;
   egressHttpServer = kj::none;
-  egressHeaderTable = kj::none;
 }
 
 kj::Promise<ContainerClient::Response> ContainerClient::dockerApiRequest(kj::Network& network,

@@ -58,6 +58,8 @@ class ContainerClient final: public rpc::Container::Server, public kj::Refcounte
 
  private:
   capnp::ByteStreamFactory& byteStreamFactory;
+  // Create header table for HTTP parsing
+  kj::HttpHeaderTable headerTable;
   kj::Timer& timer;
   kj::Network& network;
   kj::String dockerPath;
@@ -123,7 +125,6 @@ class ContainerClient final: public rpc::Container::Server, public kj::Refcounte
 
   // Egress HTTP listener for handling container egress via HTTP CONNECT from sidecar
   class EgressHttpService;
-  kj::Maybe<kj::Own<kj::HttpHeaderTable>> egressHeaderTable;
   kj::Maybe<kj::Own<kj::HttpServer>> egressHttpServer;
   kj::Maybe<kj::Promise<void>> egressListenerTask;
 

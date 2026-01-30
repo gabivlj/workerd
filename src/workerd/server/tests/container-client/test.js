@@ -317,12 +317,12 @@ export class DurableObjectExample extends DurableObject {
 
     // Set up egress TCP mapping to route requests to the binding
     // This registers the binding's channel token with the container runtime
-    container.setEgressHttp(
+    container.interceptOutboundHttp(
       '11.0.0.1:9999',
       this.ctx.exports.TestService({ props: { id: 1 } })
     );
 
-    container.setEgressHttp(
+    container.interceptOutboundHttp(
       '11.0.0.2:9999',
       this.ctx.exports.TestService({ props: { id: 2 } })
     );
